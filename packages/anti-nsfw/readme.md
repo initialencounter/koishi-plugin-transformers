@@ -28,6 +28,8 @@ anti nsfw
 
 ### 放置模型
 
+我将模型上传到了魔塔社区，如果访问不了下面的链接可以从这里下载 `https://modelscope.cn/models/initialencounter/vit-base-nsfw-detector/files`
+
 将 https://huggingface.co/AdamCodd/vit-base-nsfw-detector/tree/main/onnx 仓库的 `model_quantized.onnx` 模型放到 `onnx` 文件夹下面
 
 将 https://huggingface.co/AdamCodd/vit-base-nsfw-detector/tree/main/onnx 仓库的 `preprocessor_config.json` 和 `config.json` 放到  `vit-base-nsfw-detector` 文件夹下面
