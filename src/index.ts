@@ -1,40 +1,62 @@
 import { Context, Schema, Service } from 'koishi'
-import type { PipelineType } from '@xenova/transformers';
+import type { RawImage, AllTasks, PipelineType, PretrainedOptions, env } from '@xenova/transformers';
 import { resolve } from 'path';
+import { readFileSync } from 'fs';
 
 export const name = 'transformers'
 
 declare module 'koishi' {
   interface Context {
-    pipeline: Pipeline
+    transformers: Transformers
   }
 }
-class Pipeline extends Service {
-  pluginConfig: Pipeline.Config
-  constructor(ctx: Context, config: Pipeline.Config) {
-    super(ctx, 'pipeline', true)
-    this.pluginConfig = config
+class Transformers extends Service {
+  pipeline: <T extends PipelineType>(
+    task: T,
+    model?: string,
+    pretrainedOptions?: PretrainedOptions) => Promise<AllTasks[T]>
+  env: typeof env
+  RawImage: typeof RawImage
+  constructor(ctx: Context) {
+    super(ctx, 'transformers', true)
+    ctx.on('ready',async()=>{
+      let { pipeline, env, RawImage } = await import('@xenova/transformers');
+      this.pipeline = pipeline;
+      this.env = env;
+      this.RawImage = RawImage;
+    })
   }
 
-  async getInstance(task: PipelineType, model: string, progress_callback = null,) {
-    // Dynamically import the Transformers.js library
-    let { pipeline, env } = await import('@xenova/transformers');
-    let absPath = resolve(this.pluginConfig.cacheDir);
+  async newRawImage (img: Uint8Array, width: number, height: number, channels: 1|2|3|4): Promise<RawImage> {
+    if (!this.RawImage) {
+      return null
+    }
+    return new this.RawImage(img, width, height, channels)
+  }
+  async getPipeline(task: PipelineType, model: string, cacheDir: string, pretrainedOptions?: PretrainedOptions) {
+    if (!this.pipeline) {
+      return null
+    }
+    let absPath = resolve(cacheDir);
     // NOTE: Uncomment this to change the cache directory
-    this.ctx.logger.info('Pipeline service initialized cache dir:', absPath)
-    env.cacheDir = absPath;
-    return pipeline(task, model, { progress_callback });
+    console.log('Setting cache directory to:', absPath);
+    this.env.cacheDir = absPath;
+    try {
+      let pipe = this.pipeline(task, model, pretrainedOptions);
+      this.ctx.logger('transformers').success('Pipeline service initialized:', absPath)
+      return pipe
+    }
+    catch (e) {
+      this.ctx.logger('transformers').error('load model failed:', absPath);
+      return null;
+    }
   }
 }
 
-namespace Pipeline {
-  export interface Config {
-    cacheDir: string
-  }
-
-  export const Config: Schema<Config> = Schema.object({
-    cacheDir: Schema.string().default('node_modules/@xenova/transformers/.cache').description('onnx 模型的缓存目录，填写绝对路径或相对于 koishi 根目录的路径'),
-  })
+namespace Transformers {
+  export const usage = readFileSync(resolve(__dirname, "../readme.md")).toString('utf-8')
+  export interface Config { }
+  export const Config: Schema<Config> = Schema.object({})
 }
 
-export default Pipeline
+export default Transformers

@@ -1,16 +1,14 @@
 {
   "name": "koishi-plugin-transformers",
   "description": "transformers.js service | 在 koishi 运行 onnx 模型",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",
   "files": [
     "lib",
     "dist"
   ],
-  "scripts": {
-    "build": "atsc"
-  },
+  "scripts": {},
   "license": "AGPL-3.0",
   "author": {
     "name": "initencounter",
