@@ -1,5 +1,7 @@
-# koishi-plugin-transformers
+# Koishi 模板仓库
 
-[![npm](https://img.shields.io/npm/v/koishi-plugin-transformers?style=flat-square)](https://www.npmjs.com/package/koishi-plugin-transformers)
+本仓库包含了 Koishi 的模板项目。
 
-transformers.js service | 在 koishi 运行 onnx 模型
+## 使用教程
+
+<https://koishi.chat/manual/starter/boilerplate.html>

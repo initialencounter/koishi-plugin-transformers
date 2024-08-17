@@ -19,27 +19,28 @@ class Transformers extends Service {
   RawImage: typeof RawImage
   constructor(ctx: Context) {
     super(ctx, 'transformers', true)
-    ctx.on('ready',async()=>{
-      let { pipeline, env, RawImage } = await import('@xenova/transformers');
-      this.pipeline = pipeline;
-      this.env = env;
-      this.RawImage = RawImage;
-    })
   }
 
-  async newRawImage (img: Uint8Array, width: number, height: number, channels: 1|2|3|4): Promise<RawImage> {
+  async init() {
+    let { pipeline, env, RawImage } = await import('@xenova/transformers');
+    this.pipeline = pipeline;
+    this.env = env;
+    this.RawImage = RawImage;
+  }
+
+  async newRawImage(img: Uint8Array, width: number, height: number, channels: 1 | 2 | 3 | 4): Promise<RawImage> {
     if (!this.RawImage) {
-      return null
+      await this.init()
     }
     return new this.RawImage(img, width, height, channels)
   }
   async getPipeline(task: PipelineType, model: string, cacheDir: string, pretrainedOptions?: PretrainedOptions) {
     if (!this.pipeline) {
-      return null
+      await this.init()
     }
     let absPath = resolve(cacheDir);
     // NOTE: Uncomment this to change the cache directory
-    console.log('Setting cache directory to:', absPath);
+    this.ctx.logger('transformers').info('Loading model from cache directory:', absPath);
     this.env.cacheDir = absPath;
     try {
       let pipe = this.pipeline(task, model, pretrainedOptions);

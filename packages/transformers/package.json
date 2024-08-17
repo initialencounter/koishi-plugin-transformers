@@ -1,0 +1,36 @@
+{
+  "name": "koishi-plugin-transformers",
+  "description": "transformers.js service | 在 koishi 运行 onnx 模型",
+  "version": "0.0.2",
+  "main": "lib/index.js",
+  "typings": "lib/index.d.ts",
+  "files": [
+    "lib",
+    "dist"
+  ],
+  "license": "AGPL-3.0",
+  "author": {
+    "name": "initencounter",
+    "email": "2911583893@qq.com",
+    "url": "https://github.com/initialencounter"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/initialencounter/koishi-plugin-transformers.git"
+  },
+  "bugs": {
+    "url": "https://github.com/initialencounter/koishi-plugin-transformers/issues"
+  },
+  "homepage": "https://github.com/initialencounter/koishi-plugin-transformers#readme.md",
+  "keywords": [
+    "chatbot",
+    "koishi",
+    "plugin"
+  ],
+  "peerDependencies": {
+    "koishi": "^4.17.12"
+  },
+  "dependencies": {
+    "@xenova/transformers": "^2.17.2"
+  }
+}

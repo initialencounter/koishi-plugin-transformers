@@ -1,4 +1,4 @@
-name: Publish to npm
+name: Publish anti-nsfw
 
 on:
   workflow_dispatch:
@@ -19,11 +19,15 @@ jobs:
           node-version: 20
         env:
           DISABLE_V8_COMPILE_CACHE: 1
+      - name: Install dependencies
+        run: npm install
+      - name: Build
+        run: npm run build anti-nsfw
       - name: Publish
         run: |
           npm config set provenance true
           echo "//registry.npmjs.org/:_authToken=$NPM_TOKEN" >> ~/.npmrc
-          npm publish --access public
+          cd packages/anti-nsfw && npm publish --access public
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
