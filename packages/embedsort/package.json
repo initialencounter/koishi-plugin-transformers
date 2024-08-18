@@ -1,7 +1,7 @@
 {
   "name": "koishi-plugin-embedsort",
   "description": "嵌入文本检索",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",
   "files": [
@@ -33,6 +33,6 @@
   ],
   "peerDependencies": {
     "koishi": "^4.17.11",
-    "koishi-plugin-transformers": "^0.0.3"
+    "koishi-plugin-transformers": "^0.0.4"
   }
 }

@@ -2,7 +2,7 @@ import { readFileSync } from 'fs'
 import { Context, Schema } from 'koishi'
 import { } from 'koishi-plugin-transformers';
 import { resolve } from 'path'
-import type { Tensor, FeatureExtractionPipeline } from '@xenova/transformers'
+import type { Tensor, FeatureExtractionPipeline } from '@huggingface/transformers'
 
 export const name = 'embedsort'
 export const inject = {
@@ -18,7 +18,7 @@ export interface Config {
   randSort: number
 }
 export const Config: Schema<Config> = Schema.object({
-  cacheDir: Schema.string().default('node_modules\\@xenova\\transformers\\.cache').description('缓存目录'),
+  cacheDir: Schema.string().default('').description('缓存目录'),
   model: Schema.string().default('Xenova/bge-large-zh-v1.5').description('模型名称'),
   embedTexts: Schema.string().description('嵌入文本的路径, txt格式，内容以换行符分开').required(true),
   query_prefix: Schema.string().default('用以下句子来搜索相关段落：').description('查询前缀'),
