@@ -28,8 +28,6 @@
     "plugin"
   ],
   "peerDependencies": {
-    "@initencounter/koishi-plugin-jimp": "^0.0.5",
-    "koishi": "^4.17.12",
-    "koishi-plugin-transformers": "^0.0.3"
+    "koishi": "^4.17.12"
   }
 }

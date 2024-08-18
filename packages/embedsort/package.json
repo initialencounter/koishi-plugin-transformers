@@ -32,7 +32,6 @@
     "embed query"
   ],
   "peerDependencies": {
-    "koishi": "^4.17.11",
-    "koishi-plugin-transformers": "^0.0.4"
+    "koishi": "^4.17.11"
   }
 }
