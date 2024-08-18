@@ -24,6 +24,8 @@
     "plugins/@*/*"
   ],
   "scripts": {
+    "set-proxy": "npm config set registry https://registry.npmmirror.com",
+    "unset-proxy": "npm config delete registry",
     "new": "koishi-scripts new",
     "setup": "koishi-scripts setup",
     "clone": "koishi-scripts clone",
@@ -52,6 +54,7 @@
     "yml-register": "^1.2.5"
   },
   "dependencies": {
+    "@initencounter/koishi-plugin-jimp": "^0.0.5",
     "@koishijs/plugin-bind": "^1.5.1",
     "@koishijs/plugin-commands": "^3.5.4",
     "@koishijs/plugin-config": "^2.8.5",
