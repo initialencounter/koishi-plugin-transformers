@@ -14,7 +14,7 @@ export interface Config {
   model: string
 }
 export const Config: Schema<Config> = Schema.object({
-  cacheDir: Schema.string().default('node_modules\\@xenova\\transformers\\.cache').description('缓存目录'),
+  cacheDir: Schema.string().default('').description('缓存目录'),
   model: Schema.string().default('').description('模型名称'),
 })
 
