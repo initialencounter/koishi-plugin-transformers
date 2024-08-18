@@ -44,7 +44,7 @@ export function apply(ctx: Context, config: Config) {
     if (!embeddings) {
       return next()
     }
-    if (config.randSort > 0 && Math.random() < config.randSort) {
+    if (config.randSort === 0 || Math.random() < config.randSort) {
       return next()
     }
     session.send(await embedsort(embeddings, extractor, embedTexts, config, session.content))
