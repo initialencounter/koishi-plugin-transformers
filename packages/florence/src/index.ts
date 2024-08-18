@@ -12,12 +12,23 @@ export const inject = {
 
 export const usage = readFileSync(resolve(__dirname, "../readme.md")).toString('utf-8')
 export interface Config {
+  task: '<MORE_DETAILED_CAPTION>' | '<CAPTION>' | '<OCR>' | '<OD>' | '<DENSE_REGION_CAPTION>' | '<REGION_PROPOSAL>' | '<OCR_WITH_REGION>' | '<DETAILED_CAPTION>'
   cacheDir: string
   model: string
   dtype: 'fp32' | 'q8'
   max_new_tokens: number
 }
 export const Config: Schema<Config> = Schema.object({
+  task: Schema.union([
+    Schema.const('<MORE_DETAILED_CAPTION>').description('Describe with a paragraph what is shown in the image.'),
+    Schema.const('<CAPTION>').description('What does the image describe?'),
+    Schema.const('<OCR>').description('What is the text in the image?'),
+    Schema.const('<OD>').description('Locate the objects with category name in the image.'),
+    Schema.const('<DENSE_REGION_CAPTION>').description('Locate the objects in the image, with their descriptions.'),
+    Schema.const('<REGION_PROPOSAL>').description('Locate the region proposals in the image.'),
+    Schema.const('<OCR_WITH_REGION>').description('What is the text in the image, with regions?'),
+    Schema.const('<DETAILED_CAPTION>').description('Describe in detail what is shown in the image.'),
+  ]).default('<MORE_DETAILED_CAPTION>').description('任务'),
   cacheDir: Schema.string().default('').description('缓存目录'),
   model: Schema.string().default('onnx-community/Florence-2-base-ft').description('模型名称'),
   dtype: Schema.union([
@@ -42,7 +53,7 @@ export function apply(ctx: Context, config: Config) {
     }
   })
 
-  ctx.command('florence <text:text>', '使用 florence 进行对话').action(async ({ session }, text) => {
+  ctx.command('florence <task:string>', "使用 florence 处理图片任务支持的任务有 '<MORE_DETAILED_CAPTION>' | '<CAPTION>' | '<OCR>' | '<OD>' | '<DENSE_REGION_CAPTION>' | '<REGION_PROPOSAL>' | '<OCR_WITH_REGION>' | '<DETAILED_CAPTION>'").action(async ({ session }, input_text) => {
     if (!model) {
       return '模型加载失败，请稍后再试'
     }
@@ -51,25 +62,10 @@ export function apply(ctx: Context, config: Config) {
     if (!image) {
       return '未找到图片'
     }
-    const task = text ?? '<MORE_DETAILED_CAPTION>'
+    const task = input_text ?? '<MORE_DETAILED_CAPTION>'
     let result = await handleTask(task, image)
-    return h.quote(session.messageId) + result
-  })
-
-  ctx.middleware(async (session, next) => {
-    if (!session.content.startsWith('florence')) {
-      return next()
-    }
-    if (!model) {
-      return next()
-    }
-    const image = await selectImage(ctx, session)
-    if (!image) {
-      return '未找到图片'
-    }
-    const task = session.content.replace('florence', '') ?? '<MORE_DETAILED_CAPTION>'
-    let result = await handleTask(task, image)
-    return h.quote(session.messageId) + result
+    console.log(result, 'result')
+    return h.quote(session.messageId) + JSON.stringify(result)
   })
 
   async function handleTask(task: string, image: RawImage) {
@@ -85,7 +81,6 @@ export function apply(ctx: Context, config: Config) {
       ...vision_inputs,
       max_new_tokens: 100,
     })
-
     const generated_text = tokenizer.batch_decode(generated_ids, { skip_special_tokens: false })[0]
     const result = processor.post_process_generation(generated_text, task, image.size)
     return result
@@ -138,7 +133,7 @@ async function RawImageFromBuffer(ctx: Context, imgBase64: string, imgBuffer: Bu
 
 function selectImageH(elements: h[]): h {
   for (let i = 0; i < elements.length; i++) {
-    if (['img'].includes(elements[i].attrs.type)) {
+    if (['img'].includes(elements[i].type)) {
       return elements[i]
     }
   }
