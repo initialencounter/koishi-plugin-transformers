@@ -2,40 +2,57 @@
 
 [![npm](https://img.shields.io/npm/v/koishi-plugin-anti-nsfw?style=flat-square)](https://www.npmjs.com/package/koishi-plugin-anti-nsfw)
 
-anti nsfw
+撤回 nsfw 图片
 
-撤回群友发送的 nsfw 图片
+## 介绍
 
-## 注意事项
+该插件会在你的 Koishi 中运行一个 [onnx](https://huggingface.co/AdamCodd/vit-base-nsfw-detector)，使用中间件接收图片
+预测收到的图片是否为 `nsfw` 图片，并撤回 `nsfw` 图片
 
-该插件会增加 300MB 左右的内存占用
+预测的准确率为 [0.9654](https://huggingface.co/AdamCodd/vit-base-nsfw-detector)
 
-## 使用方法
+## 配置
 
-如果你的机器无法访问 huggingface，请安装下面的步骤来配置插件
+### 下载模型
+
+如果您的机器可以访问 huggingface， 则无需做此步骤
+
+<details>
+<summary>点我查看👈</summary>
+
+前往 huggingface [下载模型](https://huggingface.co/AdamCodd/vit-base-nsfw-detector)
+
+同时，我将模型上传到了魔塔社区，如果访问不了 huggingface 可以从[这里👈](https://modelscope.cn/models/initialencounter/vit-base-nsfw-detector/files)下载
+
+#### 下载模型配置文件
+
+找一个存放模型的目录 例如 `D:\models\AdamCodd\vit-base-nsfw-detector`
+
+你需要下载这些文件，保存到 `vit-base-nsfw-detector` 文件夹
+
+- config.json
+- preprocessor_config.json
+
+#### 下载 onnx
+
+新建一个文件夹 命名为 `onnx`， 将以下模型放入 `onnx` 文件夹
+
+- model_quantized.onnx
 
 
+</details>
 
-### 创建文件夹
+### 配置插件
 
-找一个存放模型的目录，例如 `C:\Users\29115\Desktop\anti-nsfw`
+如果您的机器可以访问 huggingface， 则无需做此步骤
 
-在这个目录新建文件夹 `AdamCodd`
+<details>
+<summary>点我查看👈</summary>
 
-在 `AdamCodd` 新建文件夹 `vit-base-nsfw-detector`
+填写存放模型的路径 例如 `D:\models`
 
-在 `vit-base-nsfw-detector` 新建文件夹 `onnx`
-
-### 放置模型
-
-我将模型上传到了魔塔社区，如果访问不了下面的链接可以从这里下载 `https://modelscope.cn/models/initialencounter/vit-base-nsfw-detector/files`
-
-将 https://huggingface.co/AdamCodd/vit-base-nsfw-detector/tree/main/onnx 仓库的 `model_quantized.onnx` 模型放到 `onnx` 文件夹下面
-
-将 https://huggingface.co/AdamCodd/vit-base-nsfw-detector/tree/main/onnx 仓库的 `preprocessor_config.json` 和 `config.json` 放到  `vit-base-nsfw-detector` 文件夹下面
-
-### 配置模型缓存路径
-
-在 `anti-nsfw` 插件的 `cacheDir` 项填写 `C:\Users\29115\Desktop\anti-nsfw`
+填写模型名称 `AdamCodd\vit-base-nsfw-detector`
 
 启用 `transformers` 插件和 `anti-nsfw` 插件
+
+</details>
