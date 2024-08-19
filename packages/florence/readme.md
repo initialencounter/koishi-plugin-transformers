@@ -19,11 +19,11 @@ https://github.com/xenova/transformers.js/issues/815#issuecomment-2184090182
 ### 修改 [transformers.js](https://github.com/xenova/transformers.js) 模块代码
 
 transformers.js 存在无法加载 florence 的bug
-你需要在 `@huggingface/transformers/dist/transformers.mjs` 删掉第7472行，并加上这段代码
+你需要在 `@huggingface/transformers/dist/transformers.mjs` 删掉第7471行，并加上这段代码
 ```javascript
-let modelType = MODEL_TYPE_MAPPING.get(modelName);
-if (modelType === undefined){
-  modelType = 'Florence2ForConditionalGeneration'
+let modelName  = MODEL_CLASS_TO_NAME_MAPPING.get(this);
+if (modelName === undefined){
+  modelName = 'Florence2ForConditionalGeneration'
 }
 ```
 
