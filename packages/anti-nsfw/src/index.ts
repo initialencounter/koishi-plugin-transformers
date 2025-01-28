@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'fs';
+import { readFileSync } from 'fs';
 import { Context, Schema, h } from 'koishi'
 import { } from 'koishi-plugin-transformers';
 import { } from '@initencounter/jimp'
@@ -50,7 +50,8 @@ export function apply(ctx: Context, config: Config) {
         if (img.startsWith('data:image')) {
           let base64 = img.split(',')[1]
           const imgBuffer = Buffer.from(base64, 'base64')
-          const channels = getChannelCount(base64, imgBuffer)
+          // const base64Header = img.split(',')[0]
+          // const channels = getChannelCount(imgBuffer, base64Header)
           const jimp = await ctx.jimp.read(imgBuffer)
           const imgUint8Array = new Uint8Array(jimp.bitmap.data)
           const width = jimp.bitmap.width
@@ -73,10 +74,10 @@ export function apply(ctx: Context, config: Config) {
   })
 }
 
-export function getChannelCount(base64: string, buffer: Buffer): number {
-  if (base64.includes('png')) {
+export function getChannelCount(buffer: Buffer, base64Header: string): number {
+  if (base64Header.includes('png')) {
     return getPngChannelCount(buffer)
-  } else if (base64.includes('jpeg') || base64.includes('jpg')) {
+  } else if (base64Header.includes('jpeg') || base64Header.includes('jpg')) {
     return getJpegChannelCount(buffer)
   }
   throw new Error('Unsupported image format')
