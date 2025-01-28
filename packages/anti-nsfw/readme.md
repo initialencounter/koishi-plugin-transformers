@@ -56,3 +56,17 @@
 启用 `transformers` 插件和 `anti-nsfw` 插件
 
 </details>
+
+# 运行模式
+
+## 将插件作为后端（只提供API，不能主动检测NSFW图片）
+
+运行模式 runAs 选为 server
+填写模型的路径和名称，其他都一样启动就行
+
+## 将插件作为客户端（请求服务器，本地无需运行模型）
+
+选择 runAs 为 client
+填写endpoint
+
+## 本地运行插件（直接在本地运行模型，不提供API）
