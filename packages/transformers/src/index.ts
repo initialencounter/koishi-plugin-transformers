@@ -63,6 +63,7 @@ class Transformers extends Service {
       let absPath = resolve(cacheDir);
       this.ctx.logger('transformers').info('Loading model from cache directory:', absPath);
       this.env.cacheDir = absPath;
+      this.env.localModelPath = absPath
     }
     try {
       let pipe = this.pipeline(task, model, pretrainedOptions);
@@ -101,7 +102,7 @@ class Transformers extends Service {
       this.env.cacheDir = absPath;
     }
     try {
-      let pipe = this.AutoProcessor.from_pretrained(model);
+      let pipe = this.AutoProcessor.from_pretrained(model, {});
       return pipe
     }
     catch (e) {
