@@ -1,0 +1,25 @@
+{
+  "name": "koishi-plugin-yolov8",
+  "description": "",
+  "version": "0.0.1",
+  "main": "lib/index.js",
+  "typings": "lib/index.d.ts",
+  "files": [
+    "lib",
+    "dist"
+  ],
+  "license": "MIT",
+  "scripts": {},
+  "keywords": [
+    "chatbot",
+    "koishi",
+    "plugin"
+  ],
+  "dependencies": {
+    "onnxruntime-node": "^1.20.1"
+  },
+  "devDependencies": {},
+  "peerDependencies": {
+    "koishi": "^4.17.11"
+  }
+}
