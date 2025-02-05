@@ -1,54 +1,63 @@
-import { Context, Schema } from 'koishi'
+import { Context, Schema, Service } from 'koishi'
 import type Jimp from 'jimp';
 import { } from '@initencounter/jimp';
 import * as ort from 'onnxruntime-node';
 import { readFile } from 'fs/promises';
 export const name = 'yolov8'
 
-export interface Config {
-  onnxModelPath: string
-  yoloClasses: string[]
+declare module 'cordis' {
+  interface Context {
+    yolov8: Yolov8Service
+  }
 }
 
-export const Config: Schema<Config> = Schema.object({
-  onnxModelPath: Schema.string().default('best.onnx').description('onnx 模型路径'),
-  yoloClasses: Schema.array(Schema.string()).default(
-    ["9A", "3480", "CAO", "3481", "UN spec", "Blur", "9", "3091"]).description('yolo 类别'),
-})
-export const inject = {
-  required: ['transformers', 'jimp'],
-  optional: ['server', 'http']
+declare module 'koishi' {
+  interface Context {
+    yolov8: Yolov8Service
+  }
 }
-export async function apply(ctx: Context, config: Config) {
-  let classifier: ort.InferenceSession
-  // write your plugin here
-  ctx.on('ready', async () => {
-    classifier = await ort.InferenceSession.create(config.onnxModelPath)
-    ctx.logger(name).info('Model loaded')
+
+class Yolov8Service extends Service {
+  static inject = {
+    required: ['jimp'],
+    optional: ['server', 'http']
+  }
+  classifier: ort.InferenceSession
+  localConfig: Yolov8Service.Config
+  constructor(ctx: Context, config: Yolov8Service.Config) {
+    super(ctx, 'yolov8')
+    this.localConfig = config
+    ctx.on('ready', async () => {
+      this.classifier = await ort.InferenceSession.create(config.onnxModelPath)
+      ctx.logger(name).info('Model loaded')
+    })
+  }
+  /**
+   *
+   * @param img base64 图片或者图片路径
+   * @returns
+   */
+  public async predict(img: string) {
+    let yoloClasses = this.config.yoloClasses
+    let image = await imagePrepare(img, this.ctx)
+    return predict(yoloClasses, this.classifier, image)
+  }
+}
+
+namespace Yolov8Service {
+  export interface Config {
+    onnxModelPath: string
+    yoloClasses: string[]
+  }
+
+  export const Config: Schema<Config> = Schema.object({
+    onnxModelPath: Schema.string().default('best.onnx').description('onnx 模型路径'),
+    yoloClasses: Schema.array(Schema.string()).default(
+      ["9A", "3480", "CAO", "3481", "UN spec", "Blur", "9", "3091"]).description('yolo 类别'),
   })
-  ctx.middleware(async (session, next) => {
-    for (let message of session.elements) {
-      if (message.type === "img") {
-        if (!classifier) {
-          ctx.logger(name).warn('The classifier is not ready yet. Please try again later.')
-        }
-        let start = Date.now()
-        let img = message.attrs.src
-
-        // @ts-ignore
-        let res: any;
-
-        const jimp = await imagePrepare(img, ctx)
-        res = await predict(config, classifier, jimp)
-        ctx.logger.info(res)
-        let end = Date.now()
-        ctx.logger(name).info(`Time taken: ${end - start}ms`)
-        ctx.logger(name).info(`【${session.channelId} | ${session.userId}】：[${res[0].label} | ${res[0].score}]`)
-      }
-    }
-    return next()
-  })
 }
+
+export default Yolov8Service
 
 async function imagePrepare(img: string, ctx: Context) {
   let imgBuffer: Buffer
@@ -65,7 +74,7 @@ async function imagePrepare(img: string, ctx: Context) {
   return await ctx.jimp.read(imgBuffer)
 }
 
-async function predict(config: Config, session: ort.InferenceSession, image: Jimp) {
+async function predict(yoloClasses: string[], session: ort.InferenceSession, image: Jimp) {
   const rowImageWidth = image.bitmap.width;
   const rowImageHeight = image.bitmap.height;
   const width = 640;
@@ -96,7 +105,7 @@ async function predict(config: Config, session: ort.InferenceSession, image: Jim
   const feeds = { "images": inputTensor };
 
   let res = await session.run(feeds)
-  return process_output(res['output0']['data'], rowImageWidth, rowImageHeight, config.yoloClasses)
+  return process_output(res['output0']['data'], rowImageWidth, rowImageHeight, yoloClasses)
 }
 
 type BoundingBox = [number, number, number, number, string, number];
