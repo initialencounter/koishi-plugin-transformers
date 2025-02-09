@@ -36,3 +36,6 @@ test*.jpg
 koishi.yml
 yarn.lock
 models
+test.jpg
+test*
+__pycache__
