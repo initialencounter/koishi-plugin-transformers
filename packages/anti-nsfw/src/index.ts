@@ -1,188 +1,267 @@
 import { readFileSync } from 'fs';
-import { Context, Schema, h } from 'koishi'
-import { } from 'koishi-plugin-transformers';
-import { } from '@initencounter/jimp'
-import { } from '@koishijs/plugin-server'
-import { } from '@koishijs/plugin-http'
-import type { RawImage } from '@huggingface/transformers';
+import { Context, Schema, Service, Session, h, Element, Dict } from 'koishi'
+import type { } from '@koishijs/plugin-server'
+import type { } from '@koishijs/plugin-http'
 import { resolve } from 'path';
-export const name = 'anti-nsfw'
-export const inject = {
-  required: ['transformers', 'jimp'],
-  optional: ['server', 'http']
+import type { } from '@koishijs/assets'
+import Censor from '@koishijs/censor'
+import { resizeImageBuffer, softmax, detectImageFormat } from './utils';
+import * as ort from 'onnxruntime-node';
+import { readFile } from 'fs/promises';
+import type { } from 'koishi-plugin-adapter-onebot';
+
+declare module 'koishi' {
+  interface Context {
+    'anti-nsfw': AntiNSFW
+  }
 }
-
-export const usage = readFileSync(resolve(__dirname, "../readme.md")).toString('utf-8')
-export interface Config {
-  implServerPath?: string
-  cacheDir?: string
-  model?: string
-  score?: number
-  nsfw_channel?: string[]
-  runAs: 'client' | 'server' | 'local'
-  endpoint?: string
-}
-export const Config: Schema<Config> = Schema.intersect([
-  Schema.object({
-    runAs: Schema.union(['client', 'server', 'local']).default('local').description('运行模式'),
-  }),
-  Schema.union([
-    Schema.object({
-      runAs: Schema.const('client'),
-      endpoint: Schema.string().default('http://127.0.0.1:5141/nsfw-detect').description('服务端地址'),
-      score: Schema.number().role('slider').min(0).max(1).step(0.01).default(0.8).description('允许的 nsfw 值，调为 1 则不再撤回，调为 0 则 100% 撤回'),
-      nsfw_channel: Schema.array(Schema.string()).default([]).description('允许发送 nsfw 图片的频道'),
-    }),
-    Schema.object({
-      runAs: Schema.const('server'),
-      cacheDir: Schema.string().required().description('缓存目录'),
-      model: Schema.string().default('AdamCodd/vit-base-nsfw-detector').description('模型名称'),
-      implServerPath: Schema.string().default('/nsfw-detect').description('服务端路径'),
-    }),
-    Schema.object({
-      runAs: Schema.const('local'),
-      cacheDir: Schema.string().required().description('缓存目录'),
-      model: Schema.string().default('AdamCodd/vit-base-nsfw-detector').description('模型名称'),
-      score: Schema.number().role('slider').min(0).max(1).step(0.01).default(0.8).description('允许的 nsfw 值，调为 1 则不再撤回，调为 0 则 100% 撤回'),
-      nsfw_channel: Schema.array(Schema.string()).default([]).description('允许发送 nsfw 图片的频道'),
-    }),
-  ]),
-
-])
-
-export function apply(ctx: Context, config: Config) {
-  let classifier = null
-  if (ctx.server && (config.runAs === 'server')) {
-    ctx.server.post(config.implServerPath, async (ctx2) => {
-      if (!classifier) {
-        ctx2.status = 500
-        ctx2.body = 'The classifier is not ready yet. Please try again later.'
-      }
-      let img = ctx2.request.body['img']
-      img = await imagePrepare(img, ctx)
-      let res = await classifier(img)
-      ctx2.status = 200
-      ctx2.body = res
+class AntiNSFW extends Service {
+  static inject = {
+    optional: ['server', 'http', 'assets']
+  }
+  pluginConfig: AntiNSFW.Config
+  ort: typeof ort
+  session: typeof ort.InferenceSession
+  constructor(ctx: Context, config: AntiNSFW.Config) {
+    super(ctx, 'anti-nsfw')
+    this.pluginConfig = config
+    ctx.on('ready', async () => {
+      await this.init()
     })
-  };
-  ctx.on('ready', async () => {
-    if (config.runAs === 'client') {
+    ctx.middleware(this.middleware.bind(this))
+    this.applyRouter()
+    this.applyCensorService()
+  }
+  private async init() {
+    if (this.pluginConfig.runAs === 'client') {
+      this.ctx.logger.info('客户端模式，无需加载模型')
       return
     }
-    classifier = await ctx.transformers.getPipeline('image-classification', config.model, config.cacheDir)
-    if (!classifier) {
-      ctx.logger(name).warn(`模型加载失败, 名称：${config.model}, 缓存目录：${config.cacheDir}`)
+    if (!this.pluginConfig.modelPath) {
+      this.ctx.logger.warn('未配置模型路径')
+      return
+    }
+    this.session = await ort.InferenceSession.create(this.pluginConfig.modelPath);
+    if (!this.session) {
+      this.ctx.logger.warn(`模型加载失败, 模型目录：${this.pluginConfig.modelPath}`)
     } else {
-      ctx.logger(name).success('模型加载成功')
+      this.ctx.logger.success(`模型加载成功, 模型目录：${this.pluginConfig.modelPath}`)
     }
-  })
+  }
 
-  ctx.middleware(async (session, next) => {
-    if (config.runAs === 'server') {
-      return next()
-    }
-    if (config.nsfw_channel.includes(session.channelId)) {
-      return next()
-    }
-    for (let message of session.elements) {
-      if (message.type === "img") {
-        if (!classifier && config.runAs === 'local') {
-          ctx.logger(name).warn('The classifier is not ready yet. Please try again later.')
-        }
-        let start = Date.now()
-        let img = message.attrs.src
-        if (img.startsWith('file://')) {
-          img = img.replace('file://', '')
-        }
-        // @ts-ignore
-        let res: any;
-        if (config.runAs === 'client') {
-          await ctx.http.post(config.endpoint, { img }, {
-            headers: {
-              'Content-Type': 'application/json'
-            }
-          })
-        } else {
-          img = await imagePrepare(img, ctx)
-          res = await classifier(img)
-        }
-        let end = Date.now()
-        ctx.logger(name).info(`Time taken: ${end - start}ms`)
-        ctx.logger(name).info(`【${session.channelId} | ${session.userId}】：[${res[0].label} | ${res[0].score}]`)
-        if (res[0].label === 'nsfw' && res[0].score > 0.8) {
-          session.bot.deleteMessage(session.channelId, session.messageId)
-          return `图片中可能包含 NSFW 内容，概率${res[0].score}，请勿发送此类图片。` + h.at(session.userId)
+  async middleware(session: Session, next: () => any) {
+    if (session.platform === 'onebot') {
+      for (let i = 0; i < session.elements.length; i++) {
+        if (session.elements[i].type === 'img') {
+          const file = session.elements[i]?.attrs?.file
+          if (!file) continue
+          const img = await session.onebot._request('get_image', { file: session.elements[0].attrs.file })
+          const mimeType = detectImageFormat(img.data.base64)
+          const url = `data:${mimeType};base64,${img.data.base64}`
+          session.elements[i].attrs.src = url
         }
       }
+    }
+    if (this.pluginConfig.runAs === 'server') {
+      return next()
+    }
+    if (this.pluginConfig.nsfwChannel.includes(session.channelId)) {
+      return next()
+    }
+    if (!this.session && this.pluginConfig.runAs === 'local') {
+      this.ctx.logger.warn('The session is not ready yet. Please try again later.')
+    }
+    if (this.pluginConfig.runAs === 'client') {
+      const attrs = session.elements.map(element => {
+        if (element.type === 'img') {
+          return element.attrs
+        }
+      })
+      const res = await this.ctx.http('POST', this.pluginConfig.endpoint, { data: { attrs } })
+      if (res?.data?.length) {
+        for (let i = 0; i < res.data.length; i++) {
+          this.parseResult(session, res.data[i])
+        }
+      }
+    } else {
+      await this.classify(session)
     }
     return next()
-  })
-}
-
-async function imagePrepare(img: string, ctx: Context): Promise<string | RawImage> {
-  let res: string | RawImage
-  if (img.startsWith('data:image')) {
-    let base64 = img.split(',')[1]
-    const imgBuffer = Buffer.from(base64, 'base64')
-    // const base64Header = img.split(',')[0]
-    // const channels = getChannelCount(imgBuffer, base64Header)
-    const jimp = await ctx.jimp.read(imgBuffer)
-    const imgUint8Array = new Uint8Array(jimp.bitmap.data)
-    const width = jimp.bitmap.width
-    const height = jimp.bitmap.height
-    // bug only support 4 channels
-    res = await ctx.transformers.newRawImage(imgUint8Array, width, height, 4)
   }
-  return res
-}
-export function getChannelCount(buffer: Buffer, base64Header: string): number {
-  if (base64Header.includes('png')) {
-    return getPngChannelCount(buffer)
-  } else if (base64Header.includes('jpeg') || base64Header.includes('jpg')) {
-    return getJpegChannelCount(buffer)
-  }
-  throw new Error('Unsupported image format')
-}
 
-function getPngChannelCount(buffer: Buffer): number {
-  // PNG 文件头部的第25个字节是颜色类型
-  const colorType = buffer[25];
+  async imageCensor(attrs: Dict): Promise<AntiNSFW.ClassifyResult> {
+    let res = { sfw: 1, nsfw: 0 }
+    if (!this.session) {
+      return res
+    }
+    try {
+      if (!attrs?.src) {
+        return res
+      }
+      const url = (!attrs.src.startsWith('http') && this.ctx.assets) ? await this.ctx.assets.upload(attrs.src, '') : attrs.src
+      const startTime = Date.now()
 
-  switch (colorType) {
-    case 0: // Grayscale
-      return 1;
-    case 2: // RGB
-      return 3;
-    case 3: // Indexed-color
-      return 1;
-    case 4: // Grayscale with alpha
-      return 2;
-    case 6: // RGB with alpha
-      return 4;
-    default:
-      throw new Error('Unsupported color type');
-  }
-}
-
-function getJpegChannelCount(buffer: Buffer): number {
-  let i = 0;
-  while (i < buffer.length) {
-    // 查找 JPEG 段标识符 (0xFF)
-    if (buffer[i] === 0xFF) {
-      const marker = buffer[i + 1];
-
-      // SOF0 段标识符为 0xC0, 0xC1, 0xC2, 0xC3, etc.
-      if (marker >= 0xC0 && marker <= 0xC3) {
-        return buffer[i + 9]; // 第9字节是通道数
+      let img: Buffer
+      if (url.startsWith('file:///')) {
+        img = await readFile(url.replace('file:///', ''))
+      } else {
+        console.log(url.slice(0, 100))
+        img = Buffer.from(
+          (await this.ctx.http('GET', url, {
+            responseType: 'arraybuffer',
+          })).data
+        )
       }
 
-      // 跳过段长度
-      const segmentLength = buffer.readUInt16BE(i + 2);
-      i += 2 + segmentLength;
-    } else {
-      i++;
+      const feeds = await resizeImageBuffer(Buffer.from(img), 384, 384)
+      res = await this.classifier(feeds)
+      const endTime = Date.now()
+      this.ctx.logger.info(`检测耗时：${endTime - startTime}ms`, res, url.slice(0, 100))
+      return res
+    } catch (e) {
+      this.ctx.logger.error(e)
+      return res
     }
   }
 
-  throw new Error('No SOF0 marker found in JPEG file');
+  async classify(session: Session): Promise<void> {
+    for (const img of session.elements) {
+      if (img.type !== 'img') continue
+      const res = await this.imageCensor(img.attrs)
+      this.parseResult(session, res)
+    }
+  }
+
+  parseResult(session: Session, res: AntiNSFW.ClassifyResult) {
+    this.ctx.logger.info(`【${session.channelId} | ${session.userId}】：[${res.sfw} | ${res.nsfw}]`)
+    if (res.nsfw > this.pluginConfig.score) {
+      session.bot.deleteMessage(session.channelId, session.messageId)
+      session.send(`检测到不安全内容，概率：${res.nsfw}，请勿发送此类图片。` + h.at(session.userId))
+    }
+  }
+
+  /**
+   *
+   * @param imageData 384 * 384 * 4 的图片 Buffer 数据
+   * @returns
+   */
+  async classifier(imageData: Buffer): Promise<AntiNSFW.ClassifyResult> {
+    const pixel_values = this.bufferToTensor(imageData)
+    const feeds = { pixel_values };
+    const res = await this.session.run(feeds)
+    const output = softmax(res.logits.data)
+    return {
+      sfw: output[0],
+      nsfw: output[1]
+    }
+  }
+
+  /**
+   *
+   * @param imageData 384 * 384 * 3 的图片 Buffer 数据
+   * @returns
+   */
+  bufferToTensor(imageData: Buffer): ort.Tensor {
+    const width = 384;
+    const height = 384;
+    const inputData = new Float32Array(1 * 3 * width * height);
+    for (let i = 0; i < height; i++) {
+      for (let j = 0; j < width; j++) {
+        const pixelIndex = (i * width + j) * 3; // 每个像素有 3 个值（RGB），jimp 输出是 RGBA，如果使用jimp处理图像，这里需要改为 4
+        const r = imageData[pixelIndex] / 255.0;     // R
+        const g = imageData[pixelIndex + 1] / 255.0; // G
+        const b = imageData[pixelIndex + 2] / 255.0; // B
+
+        // 将数据填充到 inputData 中，布局为 [1, 3, 640, 640]
+        inputData[i * width + j] = r;               // R 通道
+        inputData[width * height + i * width + j] = g; // G 通道
+        inputData[2 * width * height + i * width + j] = b; // B 通道
+      }
+    }
+    return new ort.Tensor("float32", inputData, [1, 3, 384, 384]);
+  }
+
+  private applyRouter() {
+    if (!this.ctx.server) {
+      this.ctx.logger.info('未实现 Server 服务，跳过路由注册')
+      return
+    }
+    if (this.pluginConfig.runAs !== 'server') {
+      this.ctx.logger.info('非 Server 模式，跳过路由注册')
+      return
+    }
+    this.ctx.server.post(this.pluginConfig.implServerPath, async (ctx2) => {
+      if (!this.session) {
+        ctx2.status = 500
+        ctx2.body = 'The session is not ready yet. Please try again later.'
+      }
+      const attrsArray = ctx2.request.body['attrs']
+      let results: AntiNSFW.ClassifyResult[] = []
+      for (const attrs of attrsArray) {
+        const res = await this.imageCensor(attrs)
+        results.push(res)
+      }
+      ctx2.status = 200
+      ctx2.body = results
+    })
+  }
+  private applyCensorService() {
+    if (this.pluginConfig.runAs === 'client') {
+      this.ctx.logger.info('客户端模式，无需实现 Censor 服务')
+      return
+    }
+    this.ctx.plugin(Censor)
+    this.ctx.get('censor').intercept({
+      async img(attrs) {
+        const res: AntiNSFW.ClassifyResult = await this.imageCensor(attrs)
+        if (res.nsfw > this.pluginConfig.score) return ''
+        return Element('img', attrs)
+      }
+    })
+  }
 }
+
+namespace AntiNSFW {
+  export const name = 'anti-nsfw'
+  export const usage = readFileSync(resolve(__dirname, "../readme.md")).toString('utf-8')
+  export interface Feeds { pixel_values: any }
+  export interface ClassifyResult {
+    sfw: number
+    nsfw: number
+  }
+  export interface Config {
+    implServerPath?: string
+    modelPath?: string
+    score?: number
+    nsfwChannel?: string[]
+    runAs: 'client' | 'server' | 'local'
+    endpoint?: string
+  }
+  export const Config: Schema<Config> = Schema.intersect([
+    Schema.object({
+      runAs: Schema.union(['local', 'client', 'server',]).default('local').description('运行模式'),
+    }),
+    Schema.union([
+      Schema.object({
+        runAs: Schema.const('local'),
+        modelPath: Schema.string().required().default('models/AdamCodd/vit-base-nsfw-detector/onnx/model_quantized.onnx').description('onnx 模型路径'),
+        score: Schema.number().role('slider').min(0).max(1).step(0.01).default(0.8).description('允许的 nsfw 概率，调为 1 则不再撤回，调为 0 则 100% 撤回'),
+        nsfwChannel: Schema.array(Schema.string()).default([]).description('允许发送 nsfw 图片的频道'),
+      }),
+      Schema.object({
+        runAs: Schema.const('server'),
+        modelPath: Schema.string().required().default('models/AdamCodd/vit-base-nsfw-detector/onnx/model_quantized.onnx').description('onnx 模型路径'),
+        implServerPath: Schema.string().default('/nsfw-detect').description('服务端路径'),
+      }),
+      Schema.object({
+        runAs: Schema.const('client'),
+        endpoint: Schema.string().default('http://127.0.0.1:5141/nsfw-detect').description('服务端地址'),
+        score: Schema.number().role('slider').min(0).max(1).step(0.01).default(0.8).description('允许的 nsfw 概率，调为 1 则不再撤回，调为 0 则 100% 撤回'),
+        nsfwChannel: Schema.array(Schema.string()).default([]).description('允许发送 nsfw 图片的频道'),
+      }),
+    ]),
+  ])
+}
+
+
+export default AntiNSFW
