@@ -132,18 +132,18 @@ class AntiNSFW extends Service {
   }
 
   async parseResult(session: Session, scoreList: AntiNSFW.ClassifyResult[]) {
-    let infoText = `【${session.channelId} | ${session.userId}】：\n`
+    let infoText = ''
     let probabilityText = ''
     const nsfwImage: [string, string][] = []
     for (let i = 0; i < scoreList.length; i++) {
       const res = scoreList[i]
-      infoText += `第 ${i + 1} 张图片：${res.nsfw > res.sfw ? 'NSFW' : 'SFW'}(${res.nsfw.toFixed(2)})\n`
+      infoText += `图${i + 1}：${res.nsfw > this.pluginConfig.score ? 'NSFW' : 'SFW'}(${res.nsfw.toFixed(2)}) `
       if (res.nsfw > this.pluginConfig.score) {
         nsfwImage.push([session.elements[i].attrs.src, res.nsfw.toFixed(2)])
         probabilityText += `(${i + 1}) ${res.nsfw.toFixed(2)} `
       }
     }
-    this.ctx.logger.info(infoText)
+    if (infoText && this.pluginConfig.enableLogInfo) this.ctx.logger.info(`【${session.channelId} | ${session.userId}】：` + infoText)
     if (this.pluginConfig.censorsList.length) await this.sendToCensors(session, nsfwImage)
     if (!probabilityText) return
     const resText = session.text('services.anti-nsfw.messages.nsfw', [probabilityText, this.pluginConfig.atNsfwAuthor ? h.at(session.userId) : ''])
@@ -266,6 +266,7 @@ namespace AntiNSFW {
     nsfwChannel?: string[]
     runAs: 'client' | 'server' | 'local'
     endpoint?: string
+    enableLogInfo?: boolean
     deleteNsfw?: boolean
     sendDetectInfo?: boolean
     quoteSourceMessage?: boolean
@@ -297,6 +298,7 @@ namespace AntiNSFW {
         score: Schema.number().role('slider').min(0).max(1).step(0.01).default(0.8).description('nsfw 判定概率，超过这个值则视为 nsfw'),
         nsfwChannel: Schema.array(Schema.string()).default([]).description('允许发送 nsfw 图片的频道'),
         deleteNsfw: Schema.boolean().default(true).description('是否撤回 nsfw 图片'),
+        enableLogInfo: Schema.boolean().default(true).description('是否在日志输出检测信息'),
         quoteSourceMessage: Schema.boolean().default(true).description('是否引用原消息'),
         atNsfwAuthor: Schema.boolean().default(true).description('是否 @ 发送 nsfw 图片的用户'),
         sendDetectInfo: Schema.boolean().default(true).description('是否发送检测信息'),
@@ -313,6 +315,7 @@ namespace AntiNSFW {
         score: Schema.number().role('slider').min(0).max(1).step(0.01).default(0.8).description('nsfw 判定概率，超过这个值则视为 nsfw'),
         nsfwChannel: Schema.array(Schema.string()).default([]).description('允许发送 nsfw 图片的频道'),
         deleteNsfw: Schema.boolean().default(true).description('是否撤回 nsfw 图片'),
+        enableLogInfo: Schema.boolean().default(true).description('是否在日志输出检测信息'),
         quoteSourceMessage: Schema.boolean().default(true).description('是否引用原消息'),
         atNsfwAuthor: Schema.boolean().default(true).description('是否 @ 发送 nsfw 图片的用户'),
         sendDetectInfo: Schema.boolean().default(true).description('是否发送检测信息'),
