@@ -1,0 +1,6 @@
+services:
+  anti-nsfw:
+    description: ANTI-NSFW and image moderation service
+    messages:
+      nsfw: Detected unsafe content, probability:{0}, please do not send such images{1}.
+      censorInfo: NSFW Probability:{0}, source:{1}.

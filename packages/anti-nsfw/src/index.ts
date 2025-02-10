@@ -25,6 +25,8 @@ class AntiNSFW extends Service {
   constructor(ctx: Context, config: AntiNSFW.Config) {
     super(ctx, 'anti-nsfw')
     this.pluginConfig = config
+    ctx.i18n.define('zh-CN', require('./locales/zh'))
+    ctx.i18n.define('en-US', require('./locales/en'))
     ctx.on('ready', async () => {
       await this.init()
     })
@@ -71,21 +73,8 @@ class AntiNSFW extends Service {
     if (!this.session && this.pluginConfig.runAs === 'local') {
       this.ctx.logger.warn('The session is not ready yet. Please try again later.')
     }
-    if (this.pluginConfig.runAs === 'client') {
-      const attrs = session.elements.map(element => {
-        if (element.type === 'img') {
-          return element.attrs
-        }
-      })
-      const res = await this.ctx.http('POST', this.pluginConfig.endpoint, { data: { attrs } })
-      if (res?.data?.length) {
-        for (let i = 0; i < res.data.length; i++) {
-          this.parseResult(session, res.data[i])
-        }
-      }
-    } else {
-      await this.classify(session)
-    }
+    const scoreList: AntiNSFW.ClassifyResult[] = await this.classify(session)
+    await this.parseResult(session, scoreList)
     return next()
   }
 
@@ -124,22 +113,65 @@ class AntiNSFW extends Service {
     }
   }
 
-  async classify(session: Session): Promise<void> {
-    for (const img of session.elements) {
-      if (img.type !== 'img') continue
-      const res = await this.imageCensor(img.attrs)
-      this.parseResult(session, res)
+  async classify(session: Session): Promise<AntiNSFW.ClassifyResult[]> {
+    let scoreList: AntiNSFW.ClassifyResult[] = []
+    if (this.pluginConfig.runAs === 'client') {
+      const attrs = session.elements.map(element => {
+        if (element.type === 'img') {
+          return element.attrs
+        }
+      })
+      scoreList = (await this.ctx.http('POST', this.pluginConfig.endpoint, { data: { attrs } })).data
+    } else {
+      for (const img of session.elements) {
+        if (img.type !== 'img') continue
+        const res = await this.imageCensor(img.attrs)
+        scoreList.push(res)
+      }
     }
+    return scoreList
   }
 
-  parseResult(session: Session, res: AntiNSFW.ClassifyResult) {
-    this.ctx.logger.info(`【${session.channelId} | ${session.userId}】：[${res.sfw} | ${res.nsfw}]`)
-    if (res.nsfw > this.pluginConfig.score) {
-      session.bot.deleteMessage(session.channelId, session.messageId)
-      session.send(`检测到不安全内容，概率：${res.nsfw}，请勿发送此类图片。` + h.at(session.userId))
+  async parseResult(session: Session, scoreList: AntiNSFW.ClassifyResult[]) {
+    let infoText = `【${session.channelId} | ${session.userId}】：\n`
+    let deleted = false
+    let probabilityText = ''
+    const nsfwImage: [string, string][] = []
+    for (let i = 0; i < scoreList.length; i++) {
+      const res = scoreList[i]
+      infoText += `第 ${i + 1} 张图片：${res.nsfw > res.sfw ? 'NSFW' : 'SFW'}(${res.nsfw.toFixed(2)})\n`
+      if (res.nsfw > this.pluginConfig.score) {
+        if (this.pluginConfig.deleteNsfw && !deleted) session.bot.deleteMessage(session.channelId, session.messageId)
+        nsfwImage.push([session.elements[i].attrs.src, res.nsfw.toFixed(2)])
+        probabilityText += `(${i + 1}) ${res.nsfw.toFixed(2)} `
+      }
     }
+    const resText = session.text('services.anti-nsfw.messages.nsfw', [probabilityText, h.at(session.userId)])
+    console.log(resText)
+    if (probabilityText) session.send((this.pluginConfig.quoteSourceMessage ? h.quote(session.messageId) : '') + resText)
+    this.ctx.logger.info(infoText)
+    if (this.pluginConfig.censorsList.length) await this.sendToCensors(session, nsfwImage)
   }
 
+  async sendToCensors(session: Session, nsfwImage: [string, string][]) {
+    const result = h('figure')
+    const attrs: Dict = {
+      userId: session.userId,
+      nickname: session.author.name || session.username,
+    };
+    const channelName = (await session.bot.getChannel(session.channelId)).name
+    for (const [src, score] of nsfwImage) {
+      result.children.push(
+        h('img', { src, attrs }),
+        h("message", attrs, session.text('services.anti-nsfw.messages.censorInfo', [score, `@${session.author.name}(${session.author.id}) | ${channelName}`])),
+      )
+    }
+    for (const censor of this.pluginConfig.censorsList) {
+      const { channelId, platform, selfId, guildId } = censor
+      const bot = this.ctx.bots[`${platform}:${selfId}`]
+      bot.sendMessage(channelId, result, guildId)
+    }
+  }
   /**
    *
    * @param imageData 384 * 384 * 4 的图片 Buffer 数据
@@ -236,7 +268,24 @@ namespace AntiNSFW {
     nsfwChannel?: string[]
     runAs: 'client' | 'server' | 'local'
     endpoint?: string
+    deleteNsfw?: boolean
+    quoteSourceMessage?: boolean
+    censorsList?: Rule[]
   }
+  export interface Rule {
+    platform: string
+    channelId: string
+    selfId?: string
+    guildId?: string
+  }
+
+  export const Rule: Schema<Rule> = Schema.object({
+    platform: Schema.string().description('平台名称。').required(),
+    channelId: Schema.string().description('频道 ID。').required(),
+    guildId: Schema.string().description('群组 ID。'),
+    selfId: Schema.string().description('机器人 ID。'),
+  })
+
   export const Config: Schema<Config> = Schema.intersect([
     Schema.object({
       runAs: Schema.union(['local', 'client', 'server',]).default('local').description('运行模式'),
@@ -247,6 +296,9 @@ namespace AntiNSFW {
         modelPath: Schema.string().required().default('models/AdamCodd/vit-base-nsfw-detector/onnx/model_quantized.onnx').description('onnx 模型路径'),
         score: Schema.number().role('slider').min(0).max(1).step(0.01).default(0.8).description('允许的 nsfw 概率，调为 1 则不再撤回，调为 0 则 100% 撤回'),
         nsfwChannel: Schema.array(Schema.string()).default([]).description('允许发送 nsfw 图片的频道'),
+        deleteNsfw: Schema.boolean().default(true).description('是否撤回 nsfw 图片'),
+        quoteSourceMessage: Schema.boolean().default(true).description('是否引用原消息'),
+        censorsList: Schema.array(Rule).default([]).description('审查人列表, 可通过 `inspect` 命令获取'),
       }),
       Schema.object({
         runAs: Schema.const('server'),
@@ -258,6 +310,10 @@ namespace AntiNSFW {
         endpoint: Schema.string().default('http://127.0.0.1:5141/nsfw-detect').description('服务端地址'),
         score: Schema.number().role('slider').min(0).max(1).step(0.01).default(0.8).description('允许的 nsfw 概率，调为 1 则不再撤回，调为 0 则 100% 撤回'),
         nsfwChannel: Schema.array(Schema.string()).default([]).description('允许发送 nsfw 图片的频道'),
+        deleteNsfw: Schema.boolean().default(true).description('是否撤回 nsfw 图片'),
+        quoteSourceMessage: Schema.boolean().default(true).description('是否引用原消息'),
+        sendList: Schema.array(Schema.string()).default([]).description('发送列表'),
+        censorsList: Schema.array(Rule).default([]).description('审查人列表, 可通过 `inspect` 命令获取'),
       }),
     ]),
   ])
