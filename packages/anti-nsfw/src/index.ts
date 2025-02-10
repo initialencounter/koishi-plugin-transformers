@@ -57,7 +57,7 @@ class AntiNSFW extends Service {
         if (session.elements[i].type === 'img') {
           const file = session.elements[i]?.attrs?.file
           if (!file) continue
-          const img = await session.onebot._request('get_image', { file: session.elements[0].attrs.file })
+          const img = await session.onebot._request('get_image', { file: session.elements[i].attrs.file })
           const mimeType = detectImageFormat(img.data.base64)
           const url = `data:${mimeType};base64,${img.data.base64}`
           session.elements[i].attrs.src = url
