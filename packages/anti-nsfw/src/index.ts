@@ -94,7 +94,6 @@ class AntiNSFW extends Service {
       if (url.startsWith('file:///')) {
         img = await readFile(url.replace('file:///', ''))
       } else {
-        console.log(url.slice(0, 100))
         img = Buffer.from(
           (await this.ctx.http('GET', url, {
             responseType: 'arraybuffer',
@@ -134,23 +133,22 @@ class AntiNSFW extends Service {
 
   async parseResult(session: Session, scoreList: AntiNSFW.ClassifyResult[]) {
     let infoText = `【${session.channelId} | ${session.userId}】：\n`
-    let deleted = false
     let probabilityText = ''
     const nsfwImage: [string, string][] = []
     for (let i = 0; i < scoreList.length; i++) {
       const res = scoreList[i]
       infoText += `第 ${i + 1} 张图片：${res.nsfw > res.sfw ? 'NSFW' : 'SFW'}(${res.nsfw.toFixed(2)})\n`
       if (res.nsfw > this.pluginConfig.score) {
-        if (this.pluginConfig.deleteNsfw && !deleted) session.bot.deleteMessage(session.channelId, session.messageId)
         nsfwImage.push([session.elements[i].attrs.src, res.nsfw.toFixed(2)])
         probabilityText += `(${i + 1}) ${res.nsfw.toFixed(2)} `
       }
     }
-    const resText = session.text('services.anti-nsfw.messages.nsfw', [probabilityText, h.at(session.userId)])
-    console.log(resText)
-    if (probabilityText) session.send((this.pluginConfig.quoteSourceMessage ? h.quote(session.messageId) : '') + resText)
     this.ctx.logger.info(infoText)
     if (this.pluginConfig.censorsList.length) await this.sendToCensors(session, nsfwImage)
+    if (!probabilityText) return
+    const resText = session.text('services.anti-nsfw.messages.nsfw', [probabilityText, this.pluginConfig.atNsfwAuthor ? h.at(session.userId) : ''])
+    if (this.pluginConfig.deleteNsfw) session.bot.deleteMessage(session.channelId, session.messageId)
+    if (this.pluginConfig.sendDetectInfo) session.send((this.pluginConfig.quoteSourceMessage ? h.quote(session.messageId) : '') + resText)
   }
 
   async sendToCensors(session: Session, nsfwImage: [string, string][]) {
@@ -269,7 +267,9 @@ namespace AntiNSFW {
     runAs: 'client' | 'server' | 'local'
     endpoint?: string
     deleteNsfw?: boolean
+    sendDetectInfo?: boolean
     quoteSourceMessage?: boolean
+    atNsfwAuthor?: boolean
     censorsList?: Rule[]
   }
   export interface Rule {
@@ -282,7 +282,7 @@ namespace AntiNSFW {
   export const Rule: Schema<Rule> = Schema.object({
     platform: Schema.string().description('平台名称。').required(),
     channelId: Schema.string().description('频道 ID。').required(),
-    guildId: Schema.string().description('群组 ID。'),
+    guildId: Schema.string().description('群组 ID。（可不填）'),
     selfId: Schema.string().description('机器人 ID。'),
   })
 
@@ -294,10 +294,12 @@ namespace AntiNSFW {
       Schema.object({
         runAs: Schema.const('local'),
         modelPath: Schema.string().required().default('models/AdamCodd/vit-base-nsfw-detector/onnx/model_quantized.onnx').description('onnx 模型路径'),
-        score: Schema.number().role('slider').min(0).max(1).step(0.01).default(0.8).description('允许的 nsfw 概率，调为 1 则不再撤回，调为 0 则 100% 撤回'),
+        score: Schema.number().role('slider').min(0).max(1).step(0.01).default(0.8).description('nsfw 判定概率，超过这个值则视为 nsfw'),
         nsfwChannel: Schema.array(Schema.string()).default([]).description('允许发送 nsfw 图片的频道'),
         deleteNsfw: Schema.boolean().default(true).description('是否撤回 nsfw 图片'),
         quoteSourceMessage: Schema.boolean().default(true).description('是否引用原消息'),
+        atNsfwAuthor: Schema.boolean().default(true).description('是否 @ 发送 nsfw 图片的用户'),
+        sendDetectInfo: Schema.boolean().default(true).description('是否发送检测信息'),
         censorsList: Schema.array(Rule).default([]).description('审查人列表, 可通过 `inspect` 命令获取'),
       }),
       Schema.object({
@@ -308,11 +310,12 @@ namespace AntiNSFW {
       Schema.object({
         runAs: Schema.const('client'),
         endpoint: Schema.string().default('http://127.0.0.1:5141/nsfw-detect').description('服务端地址'),
-        score: Schema.number().role('slider').min(0).max(1).step(0.01).default(0.8).description('允许的 nsfw 概率，调为 1 则不再撤回，调为 0 则 100% 撤回'),
+        score: Schema.number().role('slider').min(0).max(1).step(0.01).default(0.8).description('nsfw 判定概率，超过这个值则视为 nsfw'),
         nsfwChannel: Schema.array(Schema.string()).default([]).description('允许发送 nsfw 图片的频道'),
         deleteNsfw: Schema.boolean().default(true).description('是否撤回 nsfw 图片'),
         quoteSourceMessage: Schema.boolean().default(true).description('是否引用原消息'),
-        sendList: Schema.array(Schema.string()).default([]).description('发送列表'),
+        atNsfwAuthor: Schema.boolean().default(true).description('是否 @ 发送 nsfw 图片的用户'),
+        sendDetectInfo: Schema.boolean().default(true).description('是否发送检测信息'),
         censorsList: Schema.array(Rule).default([]).description('审查人列表, 可通过 `inspect` 命令获取'),
       }),
     ]),

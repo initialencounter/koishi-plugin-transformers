@@ -33,8 +33,6 @@
 
 - modelPath 填写 onnx 模型路径
 
-</details>
-
 # 运行模式
 
 ## 将插件作为后端（只提供API，不能主动检测NSFW图片）
@@ -53,10 +51,16 @@
 
 前往[本地化](/locales/services/anti-nsfw)
 
-修改 `messages.nsfw` 的内容
+# 更新日志
 
-- {0} 概率
-- {1} at
+<details>
+<summary>点我查看👈</summary>
 
-如果不需要显示概率则删掉 `{0}`
-如果不需要at消息发送者则删掉 `{1}`
+- v0.0.5 (2025-02-10)
+  - 本地化支持
+  - 将 NSFW 图片转为聊天记录，并发送到指定的频道
+- v0.0.4 (2025-02-09)
+  - 直接使用 onnxruntime 推理
+  - 实现 censor 服务
+- v0.0.3
+</details>
