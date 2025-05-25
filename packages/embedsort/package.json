@@ -32,6 +32,6 @@
     "embed query"
   ],
   "peerDependencies": {
-    "koishi": "^4.17.11"
+    "koishi": "^4.18.7"
   }
 }

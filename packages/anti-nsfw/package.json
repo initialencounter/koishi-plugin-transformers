@@ -31,16 +31,15 @@
   "dependencies": {
     "@koishijs/assets": "^1.1.2",
     "@koishijs/censor": "^1.1.0",
-    "onnxruntime-node": "^1.20.1",
+    "onnxruntime-node": "^1.23.0-dev.20250522-ad7b0e368d",
     "sharp": "^0.33.5"
   },
   "peerDependencies": {
-    "koishi": "^4.17.12"
+    "koishi": "^4.18.7"
   },
   "koishi": {
     "service": {
       "optional": [
-        "assets",
         "server",
         "http"
       ],
