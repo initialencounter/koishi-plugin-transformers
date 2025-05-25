@@ -31,7 +31,7 @@
   "dependencies": {
     "@koishijs/assets": "^1.1.2",
     "@koishijs/censor": "^1.1.0",
-    "onnxruntime-node": "^1.23.0-dev.20250522-ad7b0e368d",
+    "onnxruntime-node": "^1.22.0",
     "sharp": "^0.33.5"
   },
   "peerDependencies": {
