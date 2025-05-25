@@ -7,7 +7,6 @@ import type { } from '@koishijs/assets'
 import Censor from '@koishijs/censor'
 import { resizeImageBuffer, softmax, detectImageFormat } from './utils';
 import * as ort from 'onnxruntime-node';
-import { readFile } from 'fs/promises';
 import type { } from 'koishi-plugin-adapter-onebot';
 
 declare module 'koishi' {
@@ -17,7 +16,7 @@ declare module 'koishi' {
 }
 class AntiNSFW extends Service {
   static inject = {
-    optional: ['server', 'http', 'assets']
+    optional: ['server', 'http']
   }
   pluginConfig: AntiNSFW.Config
   ort: typeof ort
@@ -43,6 +42,7 @@ class AntiNSFW extends Service {
       this.ctx.logger.warn('未配置模型路径')
       return
     }
+    // @ts-ignore
     this.session = await ort.InferenceSession.create(this.pluginConfig.modelPath);
     if (!this.session) {
       this.ctx.logger.warn(`模型加载失败, 模型目录：${this.pluginConfig.modelPath}`)
@@ -87,24 +87,18 @@ class AntiNSFW extends Service {
       if (!attrs?.src) {
         return res
       }
-      const url = (!attrs.src.startsWith('http') && this.ctx.assets) ? await this.ctx.assets.upload(attrs.src, '') : attrs.src
+      const url = attrs.src
+      new URL(url) // 检查 URL 是否有效
       const startTime = Date.now()
 
-      let img: Buffer
-      if (url.startsWith('file:///')) {
-        img = await readFile(url.replace('file:///', ''))
-      } else {
-        img = Buffer.from(
-          (await this.ctx.http('GET', url, {
-            responseType: 'arraybuffer',
-          })).data
-        )
-      }
+      const img: Buffer = Buffer.from(
+        (await this.ctx.http.file(url)).data
+      )
 
       const feeds = await resizeImageBuffer(Buffer.from(img), 384, 384)
       res = await this.classifier(feeds)
       const endTime = Date.now()
-      this.ctx.logger.info(`检测耗时：${endTime - startTime}ms`, res, url.slice(0, 100))
+      if (this.pluginConfig.enableLogInfo) this.ctx.logger.info(`检测耗时：${endTime - startTime}ms`, res, url.slice(0, 100))
       return res
     } catch (e) {
       this.ctx.logger.error(e)
@@ -152,16 +146,18 @@ class AntiNSFW extends Service {
   }
 
   async sendToCensors(session: Session, nsfwImage: [string, string][]) {
+    if (!this.pluginConfig.censorsList.length) return
     const result = h('figure')
     const attrs: Dict = {
       userId: session.userId,
       nickname: session.author.name || session.username,
     };
-    const channelName = (await session.bot.getChannel(session.channelId)).name
+    const channelName = session?.bot?.getChannel ? (await session?.bot?.getChannel(session.channelId)).name : session.channelId;
+    const platform = session.platform;
     for (const [src, score] of nsfwImage) {
       result.children.push(
         h('img', { src, attrs }),
-        h("message", attrs, session.text('services.anti-nsfw.messages.censorInfo', [score, `@${session.author.name}(${session.author.id}) | ${channelName}`])),
+        h("message", attrs, session.text('services.anti-nsfw.messages.censorInfo', [score, `${platform}@${session.author.name}(${session.author.id}) | ${channelName}`])),
       )
     }
     for (const censor of this.pluginConfig.censorsList) {
@@ -178,6 +174,7 @@ class AntiNSFW extends Service {
   async classifier(imageData: Buffer): Promise<AntiNSFW.ClassifyResult> {
     const pixel_values = this.bufferToTensor(imageData)
     const feeds = { pixel_values };
+    // @ts-ignore
     const res = await this.session.run(feeds)
     const output = softmax(res.logits.data)
     return {
